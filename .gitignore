@@ -30,9 +30,19 @@ Desktop.ini
 __pycache__/
 *.py[cod]
 .venv/
+.venv-lock/
 venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+
+# ---- Local runtime data (never on C: for MySQL) ----
+.local/
+var/
 
 # ---- Node ----
 node_modules/
@@ -42,3 +52,11 @@ build/
 
 # ---- Spec Kit machine-local state (see .specify/.gitignore) ----
 # feature.json etc. are already covered there.
+
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ---- Local tooling (not part of the platform) ----
+.opencode/plugins/
+.specify/extensions/.cache/

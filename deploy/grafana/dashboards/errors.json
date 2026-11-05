@@ -1,0 +1,11 @@
+{
+  "title": "Pingce - Errors",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type": "timeseries", "title": "HTTP 5xx rate", "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))"}]},
+    {"type": "timeseries", "title": "MCP tool errors", "targets": [{"expr": "sum(rate(mcp_tool_calls_total{status=\"error\"}[5m])) by (tool)"}]},
+    {"type": "timeseries", "title": "Audit write failures", "targets": [{"expr": "increase(audit_write_failed_total[5m])"}]},
+    {"type": "timeseries", "title": "Gate failures", "targets": [{"expr": "increase(gate_results_total{status=\"failed\"}[1h])"}]}
+  ]
+}

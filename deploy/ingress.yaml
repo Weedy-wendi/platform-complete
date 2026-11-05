@@ -1,0 +1,70 @@
+# Public edge: only the MCP protocol endpoint.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pingce-mcp
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "256k"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pingce.example.com
+      secretName: pingce-mcp-tls
+  rules:
+    - host: pingce.example.com
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: mcp-server
+                port:
+                  number: 8765
+---
+# Internal edge: health, readiness and metrics for the platform team only.
+# The host must resolve only inside the cluster/VPN, and the source ranges
+# must be replaced with the actual monitoring / operations networks.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pingce-mcp-internal
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "16k"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pingce-mcp-internal.example.com
+      secretName: pingce-mcp-internal-tls
+  rules:
+    - host: pingce-mcp-internal.example.com
+      http:
+        paths:
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-server
+                port:
+                  number: 8765
+          - path: /readyz
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-server
+                port:
+                  number: 8765
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: mcp-server
+                port:
+                  number: 8765

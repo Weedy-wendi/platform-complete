@@ -1,0 +1,538 @@
+# MCP Tool Contracts — Pingce MCP Server
+# 机器可读契约。实现产物必须与此文件一致；CI 对 tools/list 做快照比对。
+# 协议基线：MCP 2025-06-18
+
+version: "1.0.0"
+protocol: "2025-06-18"
+
+server:
+  name: "pingce-mcp"
+  version: "0.1.0"
+  transport: "streamable-http"
+  endpoint: "/mcp"
+  stateless: true
+
+auth:
+  mode: "api_key"          # api_key | oauth（预留）
+  scheme: "bearer"
+  header: "Authorization: Bearer <api_key>"
+
+limits:
+  max_request_bytes: 262144      # 256KB
+  max_result_bytes: 65536        # 64KB
+  tool_timeout_seconds: 25
+  cursor_ttl_seconds: 900        # 15min
+  max_page_size: 100
+
+scopes:
+  - "mcp:projects:read"
+  - "mcp:datasets:read"
+  - "mcp:eval:read"
+  - "mcp:eval:read_content"
+  - "mcp:badcases:read"
+  - "mcp:gate:read"
+
+# 所有工具必须为只读。CI 断言：tools[].annotations.readOnlyHint == true
+# 且 tools[].name 必须属于本文件的 name 集合。
+tools:
+
+  # ---------------------------------------------------------------------------
+  - name: "list_projects"
+    title: "列出项目"
+    description: "列出当前租户可见的项目，按更新时间倒序。"
+    scope: "mcp:projects:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+        cursor:
+          type: string
+          description: "上一次响应返回的 next_cursor"
+    outputSchema:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, name, updated_at]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
+              updated_at: { type: string, format: date-time }
+        next_cursor: { type: string }
+    errors: [UNAUTHORIZED, FORBIDDEN, RATE_LIMITED, INVALID_CURSOR]
+
+  # ---------------------------------------------------------------------------
+  - name: "search_datasets"
+    title: "检索数据集"
+    description: "按名称、标签、项目、更新时间检索数据集，返回最新版本摘要。"
+    scope: "mcp:datasets:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        query: { type: string, maxLength: 200 }
+        project_id: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+          maxItems: 10
+        updated_after: { type: string, format: date-time }
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+        cursor: { type: string }
+    outputSchema:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, name, project_id, latest_version, sample_count, updated_at]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              project_id: { type: string }
+              latest_version: { type: integer }
+              sample_count: { type: integer }
+              tags:
+                type: array
+                items: { type: string }
+              updated_at: { type: string, format: date-time }
+        next_cursor: { type: string }
+    errors: [UNAUTHORIZED, FORBIDDEN, RATE_LIMITED, INVALID_CURSOR]
+
+  # ---------------------------------------------------------------------------
+  - name: "get_dataset_schema"
+    title: "获取数据集 Schema"
+    description: "获取指定数据集版本的字段定义。不传 version 时返回最新版本。"
+    scope: "mcp:datasets:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [dataset_id]
+      properties:
+        dataset_id: { type: string }
+        version: { type: integer, minimum: 1 }
+    outputSchema:
+      type: object
+      required: [dataset_id, version, content_hash, row_count, fields]
+      properties:
+        dataset_id: { type: string }
+        version: { type: integer }
+        content_hash: { type: string }
+        row_count: { type: integer }
+        fields:
+          type: array
+          items:
+            type: object
+            required: [name, type, nullable]
+            properties:
+              name: { type: string }
+              type: { type: string }
+              nullable: { type: boolean }
+              description: { type: string }
+    errors: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED, RESULT_TOO_LARGE]
+
+  # ---------------------------------------------------------------------------
+  - name: "preview_samples"
+    title: "预览样本"
+    description: "预览数据集中的少量样本。默认脱敏，单次最多 20 条。"
+    scope: "mcp:datasets:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [dataset_id]
+      properties:
+        dataset_id: { type: string }
+        version: { type: integer, minimum: 1 }
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 5
+          description: "请求条数；服务端始终最多返回 20 条"
+        cursor: { type: string }
+    outputSchema:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [sample_id, payload, redacted]
+            properties:
+              sample_id: { type: string }
+              payload: { type: object }
+              tags:
+                type: array
+                items: { type: string }
+              redacted: { type: boolean }
+        next_cursor: { type: string }
+        truncated: { type: boolean }
+    errors: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED, INVALID_CURSOR, RESULT_TOO_LARGE]
+
+  # ---------------------------------------------------------------------------
+  - name: "list_evaluators"
+    title: "列出评分器"
+    description: "列出可用的评分器与指标定义，只返回已发布版本。"
+    scope: "mcp:eval:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        project_id: { type: string }
+    outputSchema:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, name, version, kind, metrics]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              version: { type: string }
+              kind:
+                type: string
+                enum: [rule, judge, human]
+              description: { type: string }
+              metrics:
+                type: array
+                items:
+                  type: object
+                  required: [name, direction]
+                  properties:
+                    name: { type: string }
+                    direction:
+                      type: string
+                      enum: [higher_is_better, lower_is_better]
+    errors: [UNAUTHORIZED, FORBIDDEN, RATE_LIMITED]
+
+  # ---------------------------------------------------------------------------
+  - name: "get_run"
+    title: "查询评测运行"
+    description: "查询单次 Run 的状态、进度、汇总指标与成本。"
+    scope: "mcp:eval:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [run_id]
+      properties:
+        run_id: { type: string }
+    outputSchema:
+      type: object
+      required: [run_id, status, progress, manifest_hash, summary]
+      properties:
+        run_id: { type: string }
+        status:
+          type: string
+          enum: [queued, dispatching, running, succeeded, succeeded_with_errors, failed, cancelled, timed_out]
+        progress: { type: number, minimum: 0, maximum: 1 }
+        manifest_hash: { type: string }
+        suite_id: { type: string }
+        suite_version: { type: string }
+        dataset_id: { type: string }
+        dataset_version: { type: integer }
+        target:
+          type: object
+          properties:
+            provider: { type: string }
+            model: { type: string }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        summary:
+          type: object
+          properties:
+            metrics:
+              type: array
+              items:
+                type: object
+                required: [name, value]
+                properties:
+                  name: { type: string }
+                  value: { type: number }
+            cost_usd: { type: number }
+            item_counts:
+              type: object
+              properties:
+                total: { type: integer }
+                succeeded: { type: integer }
+                failed: { type: integer }
+                skipped: { type: integer }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+    errors: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED]
+
+  # ---------------------------------------------------------------------------
+  - name: "get_run_items"
+    title: "查询样本级结果"
+    description: "分页查询 Run 的样本级结果。默认不返回完整输入/输出。"
+    scope: "mcp:eval:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [run_id]
+      properties:
+        run_id: { type: string }
+        status:
+          type: string
+          enum: [succeeded, failed, skipped, error]
+        metric: { type: string }
+        min_score: { type: number }
+        include_io:
+          type: boolean
+          default: false
+          description: "需要额外 scope mcp:eval:read_content"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        cursor: { type: string }
+    outputSchema:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [item_id, sample_id, status]
+            properties:
+              item_id: { type: string }
+              sample_id: { type: string }
+              status: { type: string }
+              score: { type: number }
+              latency_ms: { type: integer }
+              tokens: { type: integer }
+              error:
+                type: object
+                properties:
+                  code: { type: string }
+                  message: { type: string }
+              evidence_ref: { type: string }
+              input: { type: string, description: "脱敏摘录，仅 include_io=true 时返回" }
+              output: { type: string, description: "脱敏摘录，仅 include_io=true 时返回" }
+        next_cursor: { type: string }
+        truncated: { type: boolean }
+    errors: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED, INVALID_CURSOR, RESULT_TOO_LARGE]
+
+  # ---------------------------------------------------------------------------
+  - name: "compare_runs"
+    title: "对比两次运行"
+    description: "对比两次 Run 的指标差异，标注劣化与改善项。"
+    scope: "mcp:eval:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [run_id_a, run_id_b]
+      properties:
+        run_id_a: { type: string, description: "基线 Run" }
+        run_id_b: { type: string, description: "候选 Run" }
+        metrics:
+          type: array
+          items: { type: string }
+          maxItems: 20
+    outputSchema:
+      type: object
+      required: [metrics]
+      properties:
+        metrics:
+          type: array
+          items:
+            type: object
+            required: [name, baseline, candidate, delta]
+            properties:
+              name: { type: string }
+              baseline: { type: number }
+              candidate: { type: number }
+              delta: { type: number }
+              delta_pct: { type: number }
+              significant: { type: boolean }
+        regressions:
+          type: array
+          items:
+            type: object
+            properties:
+              metric: { type: string }
+              delta: { type: number }
+        improvements:
+          type: array
+          items:
+            type: object
+            properties:
+              metric: { type: string }
+              delta: { type: number }
+        warnings:
+          type: array
+          items: { type: string }
+    errors: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED]
+
+  # ---------------------------------------------------------------------------
+  - name: "search_badcases"
+    title: "检索 Badcase"
+    description: "按文本、数据集、标签检索 Badcase。语义检索不可用时降级为关键词。"
+    scope: "mcp:badcases:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        query: { type: string, maxLength: 200 }
+        dataset_id: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+          maxItems: 10
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+        cursor: { type: string }
+    outputSchema:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [badcase_id, title, created_at]
+            properties:
+              badcase_id: { type: string }
+              title: { type: string }
+              dataset_id: { type: string }
+              sample_id: { type: string }
+              tags:
+                type: array
+                items: { type: string }
+              created_at: { type: string, format: date-time }
+              similarity: { type: number }
+              evidence_ref: { type: string }
+        next_cursor: { type: string }
+        degraded: { type: boolean, description: "true 表示语义检索降级为关键词" }
+    errors: [UNAUTHORIZED, FORBIDDEN, RATE_LIMITED, INVALID_CURSOR, UPSTREAM_UNAVAILABLE]
+
+  # ---------------------------------------------------------------------------
+  - name: "check_gate"
+    title: "查询门禁结果"
+    description: "查询指定 Suite 与 Run 的门禁判定结果，只读。"
+    scope: "mcp:gate:read"
+    annotations:
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+    inputSchema:
+      type: object
+      additionalProperties: false
+      required: [suite_id, run_id]
+      properties:
+        suite_id: { type: string }
+        run_id: { type: string }
+    outputSchema:
+      type: object
+      required: [passed, rules]
+      properties:
+        passed: { type: boolean }
+        manifest_hash: { type: string }
+        evaluated_at: { type: string, format: date-time }
+        rules:
+          type: array
+          items:
+            type: object
+            required: [name, expected, actual, passed]
+            properties:
+              name: { type: string }
+              expected: { type: string }
+              actual: { type: string }
+              passed: { type: boolean }
+              evidence_ref: { type: string }
+    errors: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, RATE_LIMITED, UPSTREAM_UNAVAILABLE]
+
+# -----------------------------------------------------------------------------
+# Resources（只读大对象）
+resources:
+  - uriTemplate: "pingce://datasets/{dataset_id}/versions/{version}/schema"
+    name: "dataset-schema"
+    mimeType: "application/json"
+    scope: "mcp:datasets:read"
+    description: "数据集版本的完整 Schema；超过 64KB 时优先使用本资源而非工具返回。"
+  - uriTemplate: "pingce://runs/{run_id}/summary.json"
+    name: "run-summary"
+    mimeType: "application/json"
+    scope: "mcp:eval:read"
+    description: "Run 的结构化汇总。"
+  - uriTemplate: "pingce://runs/{run_id}/report.md"
+    name: "run-report"
+    mimeType: "text/markdown"
+    scope: "mcp:eval:read"
+    description: "Run 的 Markdown 报告。"
+
+# -----------------------------------------------------------------------------
+# Prompts（首期不实现，P2 评估）
+prompts: []

@@ -1,0 +1,11 @@
+{
+  "title": "Pingce Platform",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type": "timeseries", "title": "Queue depth", "targets": [{"expr": "job_queue_depth"}]},
+    {"type": "timeseries", "title": "HTTP 5xx rate", "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))"}]},
+    {"type": "timeseries", "title": "P95 latency", "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))"}]},
+    {"type": "timeseries", "title": "Model cost", "targets": [{"expr": "sum(increase(model_cost_usd_total[1h]))"}]}
+  ]
+}

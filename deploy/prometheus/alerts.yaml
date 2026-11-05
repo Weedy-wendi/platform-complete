@@ -1,0 +1,146 @@
+groups:
+  - name: pingce-mcp
+    rules:
+      - alert: McpHighErrorRate
+        expr: |
+          sum(rate(mcp_tool_calls_total{status="error"}[5m]))
+          /
+          clamp_min(sum(rate(mcp_tool_calls_total[5m])), 1)
+          > 0.02
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP tool error rate above 2%"
+          description: "More than 2% of MCP tool calls have failed for 10 minutes."
+
+      - alert: McpP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(mcp_tool_duration_seconds_bucket[5m])) by (le, tool)
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP tool P95 latency above 1s"
+          description: "Tool {{ $labels.tool }} P95 latency exceeds 1s for 10 minutes."
+
+      - alert: McpAuthFailureSpike
+        expr: sum(rate(mcp_auth_failures_total[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP authentication failure spike"
+          description: "More than 5 auth failures per second for 5 minutes."
+
+      - alert: McpRateLimitedSpike
+        expr: sum(rate(mcp_rate_limited_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "MCP rate-limit spike"
+          description: "Clients are being rate limited at more than 10/s."
+
+      - alert: McpAuditWriteFailures
+        expr: increase(mcp_audit_write_failed_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP audit writes are failing"
+          description: "Append-only audit coverage is broken; investigate the audit DSN."
+
+      - alert: McpCursorInvalidSpike
+        expr: sum(rate(mcp_cursor_invalid_total[5m])) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MCP cursor validation failures"
+          description: "Clients may be reusing tampered or expired cursors."
+
+      - alert: McpServerDown
+        expr: up{job="pingce-mcp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP server is down"
+          description: "The pingce-mcp scrape target has been down for 2 minutes."
+
+  - name: pingce-platform
+    rules:
+      - alert: PlatformHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_requests_total[5m])), 1)
+          > 0.02
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Platform HTTP 5xx rate above 2%"
+          description: "More than 2% of platform requests returned 5xx for 10 minutes."
+
+      - alert: PlatformP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route)
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Platform route P95 latency above 2s"
+          description: "Route {{ $labels.route }} P95 latency exceeds 2s for 10 minutes."
+
+      - alert: JobQueueBacklog
+        expr: max(job_queue_depth) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job queue backlog"
+          description: "Queue {{ $labels.queue }} has more than 100 pending jobs."
+
+      - alert: ModelCostSpike
+        expr: sum(increase(model_cost_usd_total[1h])) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model gateway cost spike"
+          description: "Model cost exceeded $50 in the last hour."
+
+      - alert: AuditWriteFailures
+        expr: increase(audit_write_failed_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Platform audit writes are failing"
+          description: "Append-only audit coverage is broken; investigate the audit database."
+
+      - alert: DependencyNotReady
+        expr: increase(platform_readiness_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Platform dependency readiness failure"
+          description: "A required dependency (DB/Redis/object storage) is not ready."
+
+      - alert: GatePassRateLow
+        expr: gate_pass_rate < 0.8 and gate_results_total > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gate pass rate is unusually low"
+          description: "Less than 80% of recent gate evaluations passed; check thresholds and model quality."

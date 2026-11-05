@@ -1,0 +1,11 @@
+{
+  "title": "Pingce - Cost",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type": "timeseries", "title": "Model cost (USD/hour)", "targets": [{"expr": "sum(increase(model_cost_usd_total[1h]))"}]},
+    {"type": "timeseries", "title": "Cost by provider", "targets": [{"expr": "sum(increase(model_cost_usd_total[1h])) by (provider)"}]},
+    {"type": "timeseries", "title": "Tokens by model", "targets": [{"expr": "sum(increase(model_tokens_total[1h])) by (model)"}]},
+    {"type": "timeseries", "title": "Budget exceeded runs", "targets": [{"expr": "increase(evaluation_budget_exceeded_total[1h])"}]}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "title": "Pingce - Queue",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {"type": "timeseries", "title": "Queue depth", "targets": [{"expr": "job_queue_depth"}]},
+    {"type": "timeseries", "title": "Oldest queued job (s)", "targets": [{"expr": "job_queue_oldest_seconds"}]},
+    {"type": "timeseries", "title": "Dead letters", "targets": [{"expr": "increase(job_dead_letter_total[1h])"}]},
+    {"type": "timeseries", "title": "Worker restarts", "targets": [{"expr": "increase(worker_restarts_total[1h])"}]}
+  ]
+}
