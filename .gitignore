@@ -1,0 +1,44 @@
+# ---- OS ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- Editors / IDEs ----
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+
+# ---- OpenCode ----
+# Keep project-level commands/config versioned, ignore machine-local state
+# and anything that could hold credentials.
+.opencode/auth.json
+.opencode/.cache/
+.opencode/logs/
+.opencode/sessions/
+.opencode/storage/
+.opencode/node_modules/
+.opencode/*.local.*
+
+# ---- Secrets / local env ----
+.env
+.env.*
+!.env.example
+*.local
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+*.log
+
+# ---- Spec Kit machine-local state (see .specify/.gitignore) ----
+# feature.json etc. are already covered there.
