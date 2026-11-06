@@ -43,8 +43,11 @@ def test_canary_and_rollback_runbooks_exist() -> None:
 
 
 def test_mcp_readonly_factory_configured() -> None:
-    text = (ROOT / "backend" / ".env.example").read_text(encoding="utf-8")
-    assert "PINGCE_MCP_SERVICES_FACTORY=app.services.readonly:build_readonly_services" in text
+    env_text = (ROOT / "backend" / ".env.example").read_text(encoding="utf-8")
+    assert "app.services.readonly:build_readonly_services" in env_text
+    compose = yaml.safe_load((ROOT / "deploy" / "compose.yaml").read_text(encoding="utf-8"))
+    factory = compose["services"]["mcp-server"]["environment"]["PINGCE_MCP_SERVICES_FACTORY"]
+    assert factory == "app.services.readonly:build_readonly_services"
 
 
 def test_otel_and_grafana_assets() -> None:
