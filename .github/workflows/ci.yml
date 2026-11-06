@@ -1,0 +1,157 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.lock
+          pip install --no-deps -e .
+      - name: Ruff lint
+        run: ruff check app tests
+      - name: Ruff format
+        run: ruff format --check app tests
+      - name: Mypy
+        run: mypy app
+      - name: Import contracts
+        run: lint-imports
+      - name: Alerts and dashboard syntax
+        run: |
+          python - <<'PY'
+          import json, pathlib, yaml
+          yaml.safe_load(open("../deploy/prometheus/alerts.yaml", encoding="utf-8"))
+          for path in pathlib.Path("../deploy/grafana/dashboards").glob("*.json"):
+              json.load(open(path, encoding="utf-8"))
+          print("deploy config ok")
+          PY
+      - name: Architecture, contract, security and tool tests
+        run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate API types and check drift
+        run: |
+          npm run gen:api
+          git diff --exit-code src/types/api.ts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        run: npm run build
+
+
+  mysql-migrations:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: pingce
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pci-root"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install --no-deps -e .
+      - name: Migration round trip
+        env:
+          PINGCE_MCP_DB_DSN: mysql+pymysql://root:ci-root@127.0.0.1:3306/pingce?charset=utf8mb4
+        run: |
+          python -m alembic upgrade head
+          python -m alembic downgrade -1
+          python -m alembic upgrade head
+      - name: Restricted grants
+        run: |
+          python - <<'PY'
+          import pymysql
+
+          connection = pymysql.connect(
+              host="127.0.0.1",
+              user="root",
+              password="ci-root",
+              database="pingce",
+              autocommit=True,
+          )
+          with connection.cursor() as cursor:
+              cursor.execute("DROP USER IF EXISTS 'pingce_mcp_ro'@'%'")
+              cursor.execute("DROP USER IF EXISTS 'pingce_mcp_audit'@'%'")
+              cursor.execute("CREATE USER 'pingce_mcp_ro'@'%' IDENTIFIED BY 'ci-ro'")
+              cursor.execute("GRANT SELECT ON pingce.* TO 'pingce_mcp_ro'@'%'")
+              cursor.execute("CREATE USER 'pingce_mcp_audit'@'%' IDENTIFIED BY 'ci-audit'")
+              cursor.execute("GRANT INSERT ON pingce.mcp_tool_call TO 'pingce_mcp_audit'@'%'")
+              cursor.execute("FLUSH PRIVILEGES")
+          connection.close()
+          PY
+      - name: Verify least-privilege grants
+        run: |
+          python - <<'PY'
+          import pymysql
+
+          def grants(user: str, password: str) -> str:
+              connection = pymysql.connect(
+                  host="127.0.0.1", user=user, password=password, database="pingce", autocommit=True
+              )
+              try:
+                  with connection.cursor() as cursor:
+                      cursor.execute("SHOW GRANTS")
+                      return "\n".join(row[0] for row in cursor.fetchall())
+              finally:
+                  connection.close()
+
+          read_only = grants("pingce_mcp_ro", "ci-ro")
+          assert "SELECT ON `pingce`.*" in read_only, read_only
+          assert "INSERT" not in read_only, read_only
+          audit = grants("pingce_mcp_audit", "ci-audit")
+          assert "INSERT ON `pingce`.`mcp_tool_call`" in audit, audit
+          assert "SELECT" not in audit, audit
+          PY

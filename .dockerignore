@@ -1,0 +1,14 @@
+.git
+.local
+backend/.venv
+backend/.venv-lock
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.mypy_cache
+backend/tests
+frontend
+**/__pycache__
+**/*.pyc
+*.log
+.env
+.env.*

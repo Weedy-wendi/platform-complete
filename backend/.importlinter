@@ -1,0 +1,21 @@
+[importlinter]
+root_package = app
+include_external_packages = False
+
+[importlinter:contract:layers]
+name = Layered architecture (core < modules < services < adapters < cli)
+type = layers
+layers =
+    app.cli
+    app.mcp
+    app.services
+    app.modules
+    app.core
+
+[importlinter:contract:modules-no-adapters]
+name = Business modules must not import adapters
+type = forbidden
+source_modules =
+    app.modules
+forbidden_modules =
+    app.mcp
