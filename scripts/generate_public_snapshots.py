@@ -29,18 +29,24 @@ def public_surfaces() -> dict[str, list[str]]:
 
 
 def file_hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def main() -> None:
     SNAPSHOTS.mkdir(parents=True, exist_ok=True)
     (SNAPSHOTS / "public_surfaces.json").write_text(
-        json.dumps(public_surfaces(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(public_surfaces(), ensure_ascii=False, indent=2, sort_keys=True)
+        + "\n",
         encoding="utf-8",
     )
     hashes = {
-        "openapi": file_hash(ROOT / "specs" / "017-rest-api" / "contracts" / "openapi.yaml"),
-        "mcp_tools": file_hash(ROOT / "specs" / "001-mcp-server" / "contracts" / "tools.yaml"),
+        "openapi": file_hash(
+            ROOT / "specs" / "017-rest-api" / "contracts" / "openapi.yaml"
+        ),
+        "mcp_tools": file_hash(
+            ROOT / "specs" / "001-mcp-server" / "contracts" / "tools.yaml"
+        ),
     }
     (SNAPSHOTS / "contract_hashes.json").write_text(
         json.dumps(hashes, indent=2, sort_keys=True) + "\n",
