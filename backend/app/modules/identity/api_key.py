@@ -23,7 +23,7 @@ from app.core.ids import new_key_id, new_secret
 from app.modules.identity.models import ApiKey
 from app.modules.identity.tenant_status import TenantStatusChecker
 
-ALLOWED_SCOPES: frozenset[str] = frozenset(
+MCP_ALLOWED_SCOPES: frozenset[str] = frozenset(
     {
         "mcp:projects:read",
         "mcp:datasets:read",
@@ -33,6 +33,33 @@ ALLOWED_SCOPES: frozenset[str] = frozenset(
         "mcp:gate:read",
     }
 )
+
+REST_SCOPES: frozenset[str] = frozenset(
+    {
+        "projects:read",
+        "projects:write",
+        "datasets:read",
+        "datasets:write",
+        "datasources:read",
+        "datasources:write",
+        "runs:read",
+        "runs:write",
+        "evaluators:read",
+        "evaluators:write",
+        "gate:read",
+        "reports:read",
+        "badcases:read",
+        "functional:read",
+        "functional:write",
+        "admin:read",
+        "admin:write",
+    }
+)
+
+# Backward-compatible name: MCP keys remain read-only by default.
+ALLOWED_SCOPES: frozenset[str] = MCP_ALLOWED_SCOPES
+# Scopes the identity service may issue for REST/admin keys.
+ISSUABLE_SCOPES: frozenset[str] = MCP_ALLOWED_SCOPES | REST_SCOPES | frozenset({"platform:admin"})
 
 
 @dataclass(frozen=True)
@@ -208,7 +235,7 @@ class ApiKeyService:
         created_by: str = "system",
     ) -> IssuedApiKey:
         self._ensure_tenant_active(tenant_id)
-        unknown = set(scopes) - ALLOWED_SCOPES
+        unknown = set(scopes) - ISSUABLE_SCOPES
         if unknown:
             raise ValueError(f"Unknown scopes: {', '.join(sorted(unknown))}")
         key_id = new_key_id()

@@ -78,3 +78,29 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+  api:
+    image: pingce-backend:dev
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    command: ["uvicorn", "app.api.server:create_app_from_settings", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      PINGCE_ENV: dev
+      PINGCE_DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-change-me-root}@mysql:3306/pingce?charset=utf8mb4
+      PINGCE_MCP_API_KEY_PEPPER: ${MCP_API_KEY_PEPPER:-change-me-pepper}
+      PINGCE_MCP_CURSOR_SECRET: ${MCP_CURSOR_SECRET:-change-me-cursor}
+      PINGCE_REPORT_SHARE_SECRET: ${REPORT_SHARE_SECRET:-change-me-share}
+      PINGCE_REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
