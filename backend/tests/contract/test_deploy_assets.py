@@ -40,3 +40,29 @@ def test_canary_and_rollback_runbooks_exist() -> None:
     assert (ROOT / "docs" / "runbooks" / "canary.md").is_file()
     assert (ROOT / "docs" / "runbooks" / "rollback.md").is_file()
     assert (ROOT / "docs" / "runbooks" / "kill-switch.md").is_file()
+
+
+def test_mcp_readonly_factory_configured() -> None:
+    text = (ROOT / "backend" / ".env.example").read_text(encoding="utf-8")
+    assert "PINGCE_MCP_SERVICES_FACTORY=app.services.readonly:build_readonly_services" in text
+
+
+def test_otel_and_grafana_assets() -> None:
+    otel = yaml.safe_load((ROOT / "deploy" / "otel-collector.yaml").read_text(encoding="utf-8"))
+    assert "otlp" in otel["receivers"]
+    assert "tempo" in otel["exporters"]["otlp/tempo"]["endpoint"]
+
+    tempo = yaml.safe_load((ROOT / "deploy" / "tempo.yaml").read_text(encoding="utf-8"))
+    assert tempo["server"]["http_listen_port"] == 3200
+
+    prometheus = yaml.safe_load((ROOT / "deploy" / "prometheus" / "prometheus.yml").read_text(encoding="utf-8"))
+    jobs = {item["job_name"] for item in prometheus["scrape_configs"]}
+    assert {"pingce-api", "pingce-mcp", "otel-collector"} <= jobs
+
+    datasources = yaml.safe_load(
+        (ROOT / "deploy" / "grafana" / "provisioning" / "datasources" / "datasources.yml").read_text(encoding="utf-8")
+    )
+    assert {"Prometheus", "Tempo"} <= {item["name"] for item in datasources["datasources"]}
+
+    compose = yaml.safe_load((ROOT / "deploy" / "compose.observability.yaml").read_text(encoding="utf-8"))
+    assert {"otel-collector", "tempo", "prometheus", "grafana"} <= set(compose["services"])

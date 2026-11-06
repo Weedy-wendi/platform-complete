@@ -61,6 +61,7 @@ services:
       PINGCE_MCP_API_KEY_PEPPER: ${MCP_API_KEY_PEPPER:-change-me-pepper}
       PINGCE_MCP_CURSOR_SECRET: ${MCP_CURSOR_SECRET:-change-me-cursor}
       PINGCE_MCP_DB_DSN: mysql+pymysql://pingce_mcp_ro:${MCP_RO_PASSWORD:-change-me-ro}@mysql:3306/pingce?charset=utf8mb4
+      PINGCE_MCP_SERVICES_FACTORY: app.services.readonly:build_readonly_services
       PINGCE_MCP_AUDIT_DSN: mysql+pymysql://pingce_mcp_audit:${MCP_AUDIT_PASSWORD:-change-me-audit}@mysql:3306/pingce?charset=utf8mb4
       PINGCE_MCP_REDIS_URL: redis://redis:6379/0
       PINGCE_MCP_CONTRACTS_PATH: /app/contracts/tools.yaml

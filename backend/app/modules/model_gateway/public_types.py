@@ -19,6 +19,7 @@ class ModelRequest:
     max_tokens: int | None = None
     connect_timeout_seconds: float = 5.0
     read_timeout_seconds: float = 30.0
+    secret: str | None = None
 
 
 @dataclass(frozen=True)

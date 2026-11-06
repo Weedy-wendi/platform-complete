@@ -185,3 +185,26 @@ def test_models_kill_switch_blocks_complete(factory, ctx) -> None:
             service.complete(ctx, _request())
     finally:
         KILL_SWITCHES.set("models", False)
+
+
+def test_provider_secret_is_resolved_and_forwarded(factory, ctx, monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def completion(config, request):
+        seen["secret"] = request.secret
+        return ProviderResult(text="ok", usage={})
+
+    service = ModelGatewayService(factory, completion, sleep=lambda _: None)
+    _provider(service, ctx, secret_ref="secret://env/PINGCE_TEST_PROVIDER_KEY")
+    monkeypatch.setenv("PINGCE_TEST_PROVIDER_KEY", "sk-test")
+    response = service.complete(ctx, _request())
+    assert response.text == "ok"
+    assert seen["secret"] == "sk-test"
+
+
+def test_missing_provider_secret_raises(factory, ctx, monkeypatch) -> None:
+    monkeypatch.delenv("PINGCE_TEST_MISSING_PROVIDER_KEY", raising=False)
+    service = ModelGatewayService(factory, FakeCompletion([]), sleep=lambda _: None)
+    _provider(service, ctx, secret_ref="secret://env/PINGCE_TEST_MISSING_PROVIDER_KEY")
+    with pytest.raises(InvalidArgumentError):
+        service.complete(ctx, _request())

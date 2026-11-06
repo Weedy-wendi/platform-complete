@@ -24,6 +24,7 @@ from app.core.ids import new_ulid
 from app.core.kill_switch import KILL_SWITCHES
 from app.core.logging import get_logger
 from app.core.repository import TenantScopedRepository
+from app.core.secrets import DEFAULT_SECRET_RESOLVER, SecretResolver, should_resolve
 from app.modules.model_gateway.models import ModelCall, ProviderConfig
 from app.modules.model_gateway.policy import CircuitBreaker, RetryPolicy
 from app.modules.model_gateway.public_types import (
@@ -178,6 +179,7 @@ class ModelGatewayService:
         circuit_factory: Any = CircuitBreaker,
         sleep: Any = time.sleep,
         raw_store: RawStore | None = None,
+        secret_resolver: SecretResolver | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._completion = completion or litellm_completion
@@ -186,6 +188,7 @@ class ModelGatewayService:
         self._circuit_factory = circuit_factory
         self._sleep = sleep
         self._raw_store = raw_store
+        self._secret_resolver = secret_resolver or DEFAULT_SECRET_RESOLVER
 
     # Provider config -------------------------------------------------------
 
@@ -246,6 +249,8 @@ class ModelGatewayService:
             session.expunge(config)
 
         request = _normalized_request(config, request)
+        if should_resolve(config.secret_ref):
+            request = replace(request, secret=self._secret_resolver.resolve(config.secret_ref))
         circuit = self._circuit(f"{config.provider}:{config.model}")
         last_error: Exception | None = None
         for attempt in range(config.max_retries):

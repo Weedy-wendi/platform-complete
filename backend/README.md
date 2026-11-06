@@ -59,17 +59,62 @@ Resources:
 
 ## Production service wiring
 
-In production the adapter must not use empty in-memory services. Provide a dotted
-`module:callable` factory that receives `Settings` and returns a
-`ServiceRegistry` backed by the platform read-only tables:
+In production the adapter must not use empty in-memory services. This repository
+ships a SQL-backed read-only factory that uses `PINGCE_MCP_DB_DSN`:
 
 ```bash
 export PINGCE_ENV=prod
-export PINGCE_MCP_SERVICES_FACTORY="pingce_platform.mcp_services:build_readonly_services"
+export PINGCE_MCP_DB_DSN="mysql+pymysql://pingce_mcp_ro:...@mysql:3306/pingce?charset=utf8mb4"
+export PINGCE_MCP_SERVICES_FACTORY="app.services.readonly:build_readonly_services"
 ```
 
 `create_app` fails fast when `PINGCE_ENV=prod` and no factory is configured.
 Development and tests may omit it and use the deterministic in-memory services.
+
+## Provider secrets
+
+Provider rows only store a `secret://` reference. Put the plaintext key in the
+environment (or a file) and register the provider:
+
+```bash
+export OPENAI_API_KEY="..."
+python scripts/configure_provider.py \
+  --dsn "$PINGCE_DATABASE_URL" \
+  --tenant-id tenant-a \
+  --name judge \
+  --provider openai \
+  --model gpt-4o-mini \
+  --secret-ref secret://env/OPENAI_API_KEY \
+  --check-secret
+```
+
+The gateway resolves `secret://env/...` and `secret://file/...` at call time and
+never persists the resolved value. Other schemes can be supplied by injecting a
+custom `SecretResolver`.
+
+## OpenTelemetry / Grafana
+
+The observability overlay adds an OTLP collector, Tempo, Prometheus and Grafana:
+
+```bash
+docker compose -f deploy/compose.yaml -f deploy/compose.observability.yaml up -d
+```
+
+| Endpoint | URL |
+|---|---|
+| OTLP HTTP | `http://localhost:4318` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` (admin / `GRAFANA_ADMIN_PASSWORD`) |
+
+Point the API, MCP server and worker at the collector:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector:4318"
+export OTEL_SERVICE_NAME="pingce-platform"
+```
+
+Grafana auto-provisions the Prometheus/Tempo datasources and the four Pingce
+dashboards from `deploy/grafana/dashboards/`.
 
 ## Audit partition maintenance
 
