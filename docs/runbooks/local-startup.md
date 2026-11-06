@@ -36,7 +36,8 @@ $env:PINGCE_DATABASE_URL = "mysql+pymysql://root:change-me-root@127.0.0.1:3306/p
 python ..\scripts\bootstrap_platform.py `
   --dsn $env:PINGCE_DATABASE_URL `
   --tenant-name Demo --tenant-slug demo `
-  --key-name local-admin
+  --key-name local-admin `
+  --pepper change-me-pepper
 ```
 
 Copy the printed `api_key` (`pk_dev_...`). Start the frontend:
